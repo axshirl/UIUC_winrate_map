@@ -1,0 +1,346 @@
+```{r creating-seasons-variable}
+Seasons = as.character(1990:2017)
+```
+
+```{r loading-packages, message = FALSE, warning = FALSE, echo = FALSE}
+package_list = c("ggplot2", "stringr", "rvest", "tidyr", "dplyr", "leaflet", "knitr")
+packages_missing = package_list[!(package_list %in% installed.packages()[,"Package"])]
+if(length(packages_missing) > 0) install.packages(packages_missing)
+loaded_pkgs = lapply(package_list, require, character.only = TRUE)
+```
+
+```{r extracting-website-tables}
+get_team_data = function(year, nchild, url = "http://fightingillini.com/cumestats.aspx?path=mbball&year=") {
+    paste0(url, year) %>%
+    read_html() %>%
+    html_nodes(css = paste0("#gbg_team td:nth-child(", nchild, ")"))
+}
+
+get_opponent_data = function(year, nchild, url = "http://fightingillini.com/cumestats.aspx?path=mbball&year=") {
+    paste0(url, year) %>%
+    read_html() %>%
+    html_nodes(css = paste0("#gbg_opp td:nth-child(", nchild, ")"))
+}
+
+for (i in 1:19){
+  name = paste0("team_web_data_column_", i)
+  assign(name, lapply(Seasons, FUN = get_team_data, nchild = i))
+}
+
+# Didn't need to run entire for loop here because only wanted 1 column from website
+opp_web_data_column_13 = lapply(Seasons, FUN = get_opponent_data, nchild = 13)
+```
+
+```{r scraping-months}
+month_function = function(variable) {
+  variable %>% 
+    str_extract(pattern = "[[:digit:]]{2}/[[:digit:]]{2}/[[:digit:]]{2}") %>%
+    str_extract(pattern = "^[[:digit:]]{2}") %>%
+    as.numeric() %>%
+    head(-2)
+}
+
+months = lapply(team_web_data_column_2, FUN = month_function) %>% unlist()
+```
+
+```{r scraping-day}
+day_function = function(variable) {
+  variable %>% 
+    str_extract(pattern = "[[:digit:]]{2}/[[:digit:]]{2}/[[:digit:]]{2}") %>%
+    str_extract(pattern = "/[[:digit:]]{2}/") %>%
+    str_replace_all(pattern = "/", replacement = "") %>%
+    as.numeric() %>%
+    head(-2)
+}
+
+days = lapply(team_web_data_column_2, FUN = day_function) %>% unlist()
+```
+
+```{r scraping-year}
+year_function = function(variable) {
+  year = variable %>% 
+    str_extract(pattern = "[[:digit:]]{2}/[[:digit:]]{2}/[[:digit:]]{2}") %>%
+    str_extract(pattern = "[[:digit:]]{2}$") %>%
+    head(-2)
+  ifelse(test = year > 50,
+         yes = paste0("19", year) %>%
+           as.numeric(),
+         no =  paste0("20", year) %>%
+           as.numeric()
+  )
+}
+
+years = lapply(team_web_data_column_2, FUN = year_function) %>% unlist()
+```
+
+```{r scraping-locations}
+location_function = function(variable) {
+  variable %>% 
+    str_extract(pattern = "vs|at") %>%
+    head(-2)
+}
+
+locations = lapply(team_web_data_column_1, FUN = location_function) %>% unlist()
+```
+
+```{r scraping-rank-of-opponents}
+rank_function = function(variable) {
+  variable %>% 
+    str_extract(pattern = "#[[:digit:]]{1,2}") %>%
+    str_replace(pattern = "#", replacement = "") %>%
+    as.integer() %>%
+    head(-2)
+}
+
+ranks = lapply(team_web_data_column_1, FUN = rank_function) %>% unlist()
+```
+
+```{r scraping-opponents}
+opponent_function = function(variable) {
+  variable %>% 
+    str_extract(pattern = "mbball.*") %>%
+    str_replace_all(pattern = ".*\">|<.*|#|[[:digit:]]{1,2}/[[:digit:]]{1,2} |[[:digit:]]{1,2} ", replacement = "") %>%
+    head(-2)
+}
+
+opponents = lapply(team_web_data_column_1, FUN = opponent_function) %>% unlist()
+```
+
+```{r creating-out-of-conference-variable}
+big_ten_list = c("Iowa|Indiana|Maryland|Michigan|Michigan State|Minnesota|Nebraska|Northwestern|Ohio State |Purdue|Rutgers|Penn State|Wisconsin")
+
+big_ten_conference = ifelse(str_detect(string = opponents, pattern = big_ten_list), "Big Ten", "OOC")
+```
+
+```{r scraping-game-results}
+result_function = function(variable) {
+  variable %>% 
+    str_extract_all(pattern = ">W<|>L<|>W \\(OT\\)<|>L \\(OT\\)<") %>%
+    str_replace_all(pattern = " \\(OT\\)", replacement = "") %>%
+    str_replace_all(pattern = ">|<", replacement = "") %>%
+    head(-2)
+}
+
+game_results = lapply(team_web_data_column_4, FUN = result_function) %>% unlist()
+```
+
+```{r scraping-illinois-scores}
+ill_point_function = function(variable) {
+  variable  %>% 
+    str_extract(pattern = "[[:digit:]]{1,3}-[[:digit:]]{1,3}") %>%
+    str_extract(pattern = "^[[:digit:]]{1,3}") %>%
+    as.numeric() %>%
+    head(-2)
+}
+
+illini_points = lapply(team_web_data_column_3, FUN = ill_point_function) %>% unlist()
+```
+
+```{r scraping-opponent-scores}
+opp_point_function = function(variable) {
+  variable  %>% 
+    str_extract(pattern = "[[:digit:]]{1,3}-[[:digit:]]{1,3}") %>%
+    str_extract(pattern = "[[:digit:]]{1,3}$") %>%
+    as.numeric() %>%
+    head(-2)
+}
+
+opponent_points = lapply(team_web_data_column_3, FUN = opp_point_function) %>% unlist()
+```
+
+```{r creating-margin-of-victory-variable}
+margin_of_victory = illini_points - opponent_points
+```
+
+```{r scraping-three-pointers}
+ill_3pm_function = function(variable) {
+  variable  %>% 
+    str_extract(pattern = "[[:digit:]]{1,2}-") %>%
+    str_replace(pattern = "-", replacement = "") %>% 
+    as.numeric() %>%
+    head(-2)
+}
+
+illini_3pms = lapply(team_web_data_column_7, FUN = ill_3pm_function) %>% unlist()
+```
+
+```{r scraping-free-throws}
+ill_ftm_function = function(variable) {
+  variable  %>% 
+    str_extract(pattern = "[[:digit:]]{1,2}-") %>%
+    str_replace(pattern = "-", replacement = "") %>% 
+    as.numeric() %>%
+    head(-2)
+}
+
+illini_ftms = lapply(team_web_data_column_9, FUN = ill_ftm_function) %>% unlist()
+```
+
+```{r scraping-offensive_rebounds}
+ill_off_reb_function = function(variable) {
+  variable  %>% 
+    str_extract(pattern = "[[:digit:]]{1,3}") %>%
+    as.numeric() %>%
+    head(-2)
+}
+
+illini_off_rebs = lapply(team_web_data_column_11, FUN = ill_off_reb_function) %>% unlist()
+```
+
+```{r scraping-defensive_rebounds}
+ill_def_reb_function = function(variable) {
+  variable  %>% 
+    str_extract(pattern = "[[:digit:]]{1,3}") %>%
+    as.numeric() %>%
+    head(-2)
+}
+
+illini_def_rebs = lapply(team_web_data_column_12, FUN = ill_def_reb_function) %>% unlist()
+```
+
+```{r scraping-illinois-total_rebounds}
+ill_tot_reb_function = function(variable) {
+  variable  %>% 
+    str_extract(pattern = "[[:digit:]]{1,3}") %>%
+    as.numeric() %>%
+    head(-2)
+}
+
+illini_tot_rebs = lapply(team_web_data_column_13, FUN = ill_tot_reb_function) %>% unlist()
+```
+
+```{r scraping-opponent-total_rebounds}
+opp_tot_reb_function = function(variable) {
+  variable  %>% 
+    str_extract(pattern = "[[:digit:]]{1,3}") %>%
+    as.numeric() %>%
+    head(-2)
+}
+
+opp_tot_rebs = lapply(opp_web_data_column_13, FUN = opp_tot_reb_function) %>% unlist()
+```
+
+```{r creating-rebound-margin-variable}
+rebound_margin = illini_tot_rebs - opp_tot_rebs
+```
+
+```{r scraping-fouls}
+ill_foul_function = function(variable) {
+  variable  %>% 
+    str_extract(pattern = "[[:digit:]]{1,2}") %>%
+    as.numeric() %>%
+    head(-2)
+}
+
+illini_fouls = lapply(team_web_data_column_15, FUN = ill_foul_function) %>% unlist()
+```
+
+```{r scraping-assists}
+ill_assist_function = function(variable) {
+  variable  %>% 
+    str_extract(pattern = "[[:digit:]]{1,2}") %>%
+    as.numeric() %>%
+    head(-2)
+}
+
+illini_assists = lapply(team_web_data_column_16, FUN = ill_assist_function) %>% unlist()
+```
+
+```{r scraping-blocks}
+ill_block_function = function(variable) {
+  variable  %>% 
+    str_extract(pattern = "[[:digit:]]{1,2}") %>%
+    as.numeric() %>%
+    head(-2)
+}
+
+illini_blocks = lapply(team_web_data_column_18, FUN = ill_block_function) %>% unlist()
+```
+
+```{r scraping-steals}
+ill_steal_function = function(variable) {
+  variable  %>% 
+    str_extract(pattern = "[[:digit:]]{1,2}") %>%
+    as.numeric() %>%
+    head(-2)
+}
+
+illini_steals = lapply(team_web_data_column_19, FUN = ill_steal_function) %>% unlist()
+```
+
+```{r creating-data-table}
+ill_table = data.frame(
+  months             = as.factor(months),
+  days               = as.factor(days),
+  years              = as.factor(years),
+  locations          = locations,
+  ranks              = ranks,
+  opponents          = opponents,
+  big_ten_conference = big_ten_conference,
+  game_results       = game_results,
+  illini_points      = illini_points,
+  opponent_points    = opponent_points,
+  margin_of_victory  = margin_of_victory,
+  illini_3pms        = illini_3pms,
+  illini_ftms        = illini_ftms,
+  illini_off_rebs    = illini_off_rebs,
+  illini_def_rebs    = illini_def_rebs,
+  illini_tot_rebs    = illini_tot_rebs,
+  opp_tot_rebs       = opp_tot_rebs,
+  rebound_margin     = rebound_margin,
+  illini_fouls       = illini_fouls,
+  illini_assists     = illini_assists,
+  illini_blocks      = illini_blocks,
+  illini_steals      = illini_steals
+)
+
+colnames(ill_table) = c("Month", "Day", "Year", "Location", "Rank", "Opponent", "Conference", "Game Result", "Illinois Score", "Opponent Score", "Margin of Victory", "3PM (ILL)", "FTM (ILL)", "Off Reb (ILL)", "Def Reb (ILL)", "Total Reb (ILL)", "Total Reb (Opponent)", "Rebound Margin", "Fouls (ILL)", "Assists (ILL)", "Blocks (ILL)", "Steals (ILL)")
+```
+
+```{r Creating state column}
+ill_table$stateloc[ill_table$Location=='vs'] <- 'Illinois'
+```
+
+```{r Away in IL}
+ill_table$stateloc[(ill_table$Location=='at') & ((ill_table$Opponent=='Northwestern')|(ill_table$Opponent=='Illinois-Chicago')|(ill_table$Opponent=='Illinois')|(ill_table$Opponent=='Bradley')|(ill_table$Opponent=='UIC')|(ill_table$Opponent=='Illinois State'))] <- 'Illinois'
+```
+
+```{r}
+ill_table$stateloc[(ill_table$Location=='at') & ((ill_table$Opponent=='American-Puerto Rico'))] <- 'Puerto Rico'
+ill_table$stateloc[(ill_table$Location=='at') & ((ill_table$Opponent=='Nebraska'))] <- 'Nebraska'
+ill_table$stateloc[(ill_table$Location=='at') & ((ill_table$Opponent=='Old Dominion')|(ill_table$Opponent=='Virginia Tech')|(ill_table$Opponent=='Richmond')|(ill_table$Opponent=='VCU'))] <- 'Virginia'
+ill_table$stateloc[(ill_table$Location=='at') & ((ill_table$Opponent=='Penn State'))] <- 'Pennsylvania'
+ill_table$stateloc[(ill_table$Location=='at') & ((ill_table$Opponent=='Memphis State')|(ill_table$Opponent=='Virginia Tech')|(ill_table$Opponent=='Vanderbilt')|(ill_table$Opponent=='Memphis'))] <- 'Tennessee'
+ill_table$stateloc[(ill_table$Location=='at') & ((ill_table$Opponent=='Indiana')|(ill_table$Opponent=='Purdue'))] <- 'Indiana'
+ill_table$stateloc[(ill_table$Location=='at') & ((ill_table$Opponent=='Ohio State')|(ill_table$Opponent=='Cincinnati')|(ill_table$Opponent=='Xavier'))] <- 'Ohio'
+ill_table$stateloc[(ill_table$Location=='at') & ((ill_table$Opponent=='Michigan')|(ill_table$Opponent=='Michigan State')|(ill_table$Opponent=='Western Michigan'))] <- 'Michigan'
+ill_table$stateloc[(ill_table$Location=='at') & ((ill_table$Opponent=='Minnesota'))] <- 'Minnesota'
+ill_table$stateloc[(ill_table$Location=='at') & ((ill_table$Opponent=='Iowa'))] <- 'Iowa'
+ill_table$stateloc[(ill_table$Location=='at') & ((ill_table$Opponent=='Wisconsin')|(ill_table$Opponent=='Marquette'))] <- 'Wisconsin'
+ill_table$stateloc[(ill_table$Location=='at') & ((ill_table$Opponent=='Temple')|(ill_table$Opponent=='Texas')|(ill_table$Opponent=='TCU')|(ill_table$Opponent=='Texas Pan-American')|(ill_table$Opponent=='Baylor'))] <- 'Texas'
+ill_table$stateloc[(ill_table$Location=='at') & ((ill_table$Opponent=='Missouri')|(ill_table$Opponent=='St. Louis')|(ill_table$Opponent=='Mizzou'))] <- 'Missouri'
+ill_table$stateloc[(ill_table$Location=='at') & ((ill_table$Opponent=='New Mexico State'))] <- 'New Mexico'
+ill_table$stateloc[(ill_table$Location=='at') & ((ill_table$Opponent=='Charlestown')|(ill_table$Opponent=='Clemson'))] <- 'South Carolina'
+ill_table$stateloc[(ill_table$Location=='at') & ((ill_table$Opponent=='Kansas State')|(ill_table$Opponent=='Kansas'))] <- 'Kansas'
+ill_table$stateloc[(ill_table$Location=='at') & ((ill_table$Opponent=='Connecticut'))] <- 'Connecticut'
+ill_table$stateloc[(ill_table$Location=='at') & ((ill_table$Opponent=='Tulsa'))] <- 'Oklahoma'
+ill_table$stateloc[(ill_table$Location=='at') & ((ill_table$Opponent=='Duke')|(ill_table$Opponent=='North Carolina')|(ill_table$Opponent=='Wake Forest'))] <- 'North Carolina'
+ill_table$stateloc[(ill_table$Location=='at') & ((ill_table$Opponent=='Hawaii')|(ill_table$Opponent=='Hawai`i')|(ill_table$Opponent=='Chaminade'))] <- 'Hawaii'
+ill_table$stateloc[(ill_table$Location=='at') & ((ill_table$Opponent=='California')|(ill_table$Opponent=='UCLA'))] <- 'California'
+ill_table$stateloc[(ill_table$Location=='at') & ((ill_table$Opponent=='Maryland'))] <- 'Maryland'
+ill_table$stateloc[(ill_table$Location=='at') & ((ill_table$Opponent=='Georgetown'))] <- 'Washington, DC'
+ill_table$stateloc[(ill_table$Location=='at') & ((ill_table$Opponent=='Arizona'))] <- 'Arizona'
+ill_table$stateloc[(ill_table$Location=='at') & ((ill_table$Opponent=='Seton Hall')|(ill_table$Opponent=='RUTGERS')|(ill_table$Opponent=='Rutgers'))] <- 'New Jersey'
+ill_table$stateloc[(ill_table$Location=='at') & ((ill_table$Opponent=='Arkansas'))] <- 'Arkansas'
+ill_table$stateloc[(ill_table$Location=='at') & ((ill_table$Opponent=='Gonzaga'))] <- 'Washington'
+ill_table$stateloc[(ill_table$Location=='at') & ((ill_table$Opponent=='Oregon'))] <- 'Oregon'
+ill_table$stateloc[(ill_table$Location=='at') & ((ill_table$Opponent=='Georgia')|(ill_table$Opponent=='Georgia Tech'))] <- 'Georgia'
+ill_table$stateloc[(ill_table$Location=='at') & ((ill_table$Opponent=='UNLV'))] <- 'Nevada'
+ill_table$stateloc[(ill_table$Location=='at') & ((ill_table$Opponent=='Miami')|(ill_table$Opponent=='UCF'))] <- 'Florida'
+ill_table$stateloc[(ill_table$Location=='at') & ((ill_table$Opponent=='Auburn')|(ill_table$Opponent=='Alabama'))] <- 'Alabama'
+ill_table$stateloc[(ill_table$Location=='at') & ((ill_table$Opponent=='Boston University'))] <- 'Massachusetts'
+ill_table$stateloc[(ill_table$Location=='at') & ((ill_table$Opponent=='Providence College'))] <- 'Rhode Island'
+ill_table$stateloc[(ill_table$Location=='at') & ((ill_table$Opponent=='West Virginia'))] <- 'West Virginia'
+ill_table %>% head(50)
+```
+
