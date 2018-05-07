@@ -1,0 +1,16 @@
+base
+methods
+datasets
+utils
+grDevices
+graphics
+stats
+ggplot2
+stringr
+xml2
+rvest
+tidyr
+dplyr
+leaflet
+knitr
+geojsonio

@@ -3,13 +3,13 @@ Seasons = as.character(1990:2017)
 ```
 
 ```{r loading-packages, message = FALSE, warning = FALSE, echo = FALSE}
-package_list = c("ggplot2", "stringr", "rvest", "tidyr", "dplyr", "leaflet", "knitr")
+package_list = c("ggplot2", "stringr", "rvest", "tidyr", "dplyr", "leaflet", "knitr", 'geojsonio')
 packages_missing = package_list[!(package_list %in% installed.packages()[,"Package"])]
 if(length(packages_missing) > 0) install.packages(packages_missing)
 loaded_pkgs = lapply(package_list, require, character.only = TRUE)
 ```
 
-```{r extracting-website-tables}
+```{r extracting-website-tables, cache=TRUE}
 get_team_data = function(year, nchild, url = "http://fightingillini.com/cumestats.aspx?path=mbball&year=") {
     paste0(url, year) %>%
     read_html() %>%
@@ -328,7 +328,7 @@ ill_table$stateloc[(ill_table$Location=='at') & ((ill_table$Opponent=='Duke')|(i
 ill_table$stateloc[(ill_table$Location=='at') & ((ill_table$Opponent=='Hawaii')|(ill_table$Opponent=='Hawai`i')|(ill_table$Opponent=='Chaminade'))] <- 'Hawaii'
 ill_table$stateloc[(ill_table$Location=='at') & ((ill_table$Opponent=='California')|(ill_table$Opponent=='UCLA'))] <- 'California'
 ill_table$stateloc[(ill_table$Location=='at') & ((ill_table$Opponent=='Maryland'))] <- 'Maryland'
-ill_table$stateloc[(ill_table$Location=='at') & ((ill_table$Opponent=='Georgetown'))] <- 'Washington, DC'
+ill_table$stateloc[(ill_table$Location=='at') & ((ill_table$Opponent=='Georgetown'))] <- 'District of Columbia'
 ill_table$stateloc[(ill_table$Location=='at') & ((ill_table$Opponent=='Arizona'))] <- 'Arizona'
 ill_table$stateloc[(ill_table$Location=='at') & ((ill_table$Opponent=='Seton Hall')|(ill_table$Opponent=='RUTGERS')|(ill_table$Opponent=='Rutgers'))] <- 'New Jersey'
 ill_table$stateloc[(ill_table$Location=='at') & ((ill_table$Opponent=='Arkansas'))] <- 'Arkansas'
@@ -341,6 +341,47 @@ ill_table$stateloc[(ill_table$Location=='at') & ((ill_table$Opponent=='Auburn')|
 ill_table$stateloc[(ill_table$Location=='at') & ((ill_table$Opponent=='Boston University'))] <- 'Massachusetts'
 ill_table$stateloc[(ill_table$Location=='at') & ((ill_table$Opponent=='Providence College'))] <- 'Rhode Island'
 ill_table$stateloc[(ill_table$Location=='at') & ((ill_table$Opponent=='West Virginia'))] <- 'West Virginia'
-ill_table %>% head(50)
+ill_table %>% head(10)
+```
+
+```{r, warning=FALSE}
+states <- geojsonio::geojson_read("us-states.json", what = "sp")
+winpct_funct <- function(x){sum(ill_table$`Game Result`[ill_table$stateloc==x]=='W') / sum((ill_table$`Game Result`[ill_table$stateloc==x]=='W')+(ill_table$`Game Result`[ill_table$stateloc==x]=='L'))
+}
+wins_by_state <- sapply(states$NAME, winpct_funct)
+wins_by_state[is.nan(wins_by_state)] <- 0
+states$winpct <- wins_by_state
+
+bins <- c(0.00, 0.10, 0.20, 0.30, 0.40, 0.50, 0.60, 0.70, 0.80, 0.90, 1.00)
+pal <- colorBin("YlOrRd", domain = states$winpct, bins = bins)
+
+labels <- sprintf(
+  "<strong>%s</strong><br/>%g Win rate",
+  states$NAME, states$winpct
+) %>% lapply(htmltools::HTML)
+
+leaflet(states) %>%
+  setView(-96, 37.8, 4) %>%
+  addTiles() %>%
+  addPolygons(
+    fillColor = ~pal(winpct),
+    weight = 2,
+    opacity = 1,
+    color = "white",
+    dashArray = "3",
+    fillOpacity = 0.7,
+    highlight = highlightOptions(
+      weight = 5,
+      color = "#666",
+      dashArray = "",
+      fillOpacity = 0.7,
+      bringToFront = TRUE),
+    label = labels,
+    labelOptions = labelOptions(
+      style = list("font-weight" = "normal", padding = "3px 8px"),
+      textsize = "15px",
+      direction = "auto")) %>%
+  addLegend(pal = pal, values = ~winpct, opacity = 0.7, title = NULL,
+    position = "bottomright")
 ```
 
